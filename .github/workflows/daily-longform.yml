@@ -2,7 +2,7 @@ name: Daily Long-Form Video with YouTube Upload
 
 on:
   schedule:
-    - cron: "0 5 * * *"   # 8:00 AM MSK — one video per day
+    - cron: "15 5 * * *"   # 8:00 AM MSK — one video per day
   workflow_dispatch:
     inputs:
       upload_youtube:
