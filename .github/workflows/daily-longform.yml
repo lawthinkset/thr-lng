@@ -51,6 +51,7 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -r requirements.txt
+        pip install --upgrade edge-tts gTTS
 
     - name: Generate video
       env:

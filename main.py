@@ -57,7 +57,7 @@ def ensure_dirs():
 USED_TOPICS_FILE = Path("used_topics.txt")
 
 def choose_topic_for_today():
-    """Reads topics, checks used_topics.txt to guarantee a NEW topic every time."""
+    """Reads topics, checks used_topics.txt to find a NEW topic without burning it prematurely."""
     if not TOPICS_FILE.exists():
         raise ValueError("topics.txt file not found!")
         
@@ -77,36 +77,37 @@ def choose_topic_for_today():
             
     # Find first topic not yet used
     today_topic = None
-    remaining_topics = []
     for t in topics:
-        if not today_topic and t not in used_topics:
+        if t not in used_topics:
             today_topic = t
-        else:
-            remaining_topics.append(t)
+            break
             
     # Fallback if all topics in file were already used
     if not today_topic:
         today_topic = topics[0]
-        remaining_topics = topics[1:]
+            
+    print(f"[topic] Selected topic: {today_topic}")
+    return today_topic
+
+def mark_topic_as_used(topic: str):
+    """Mark topic as used and remove from topics.txt ONLY when video is completed."""
+    if not TOPICS_FILE.exists():
+        return
         
-    # Mark as used
+    with open(TOPICS_FILE, "r", encoding="utf-8") as f:
+        topics = [line.strip() for line in f if line.strip()]
+        
+    remaining_topics = [t for t in topics if t != topic]
+    
     with open(USED_TOPICS_FILE, "a", encoding="utf-8") as f:
-        f.write(today_topic + "\n")
+        f.write(topic + "\n")
         
-    # Write back remaining queue to topics.txt
     with open(TOPICS_FILE, "w", encoding="utf-8") as f:
         for t in remaining_topics:
             f.write(t + "\n")
             
-    print(f"[topic] 🎯 Selected new topic: {today_topic}")
-    return today_topic
+    print(f"[topic] Saved: Marked topic as used: {topic}")
 
-def generate_story_with_pollinations(topic: str) -> str:
-    """Generate a short Russian story about ancient women's history using PAID API."""
-    
-    if not POLLINATIONS_API_KEY:
-        raise ValueError("POLLINATIONS_API_KEY not set! Get your API key from https://enter.pollinations.ai")
-    
 def generate_story_with_pollinations(topic: str) -> str:
     """Generate a short Russian story about ancient women's history using PAID API with model fallback."""
     
@@ -329,25 +330,110 @@ def generate_images(scenes: list):
     return [generate_image(scene, i) for i, scene in enumerate(scenes)]
 
 
+def sanitize_text_for_tts(text: str) -> str:
+    """Clean and sanitize text before passing to TTS engines to avoid SSML and character errors."""
+    if not text:
+        return ""
+    # Strip HTML and XML-like tags (e.g. <...> causes Microsoft SSML parse errors in edge-tts)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    # Strip markdown headers, bold, italics, code
+    text = re.sub(r'#+\s*', '', text)
+    text = re.sub(r'[*_~`]', '', text)
+    # Strip URLs
+    text = re.sub(r'http\S+', '', text)
+    # Normalize quotes, dashes
+    text = text.replace('«', '"').replace('»', '"').replace('—', '-').replace('–', '-')
+    # Keep Cyrillic, Latin letters, numbers, standard punctuation
+    text = re.sub(r'[^\w\s.,!?:;\-\'"()]+', ' ', text, flags=re.UNICODE)
+    # Normalize multiple whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
 def generate_tts(story: str):
-    """Generate narration using edge-tts (free Microsoft TTS)."""
+    """
+    Generate narration using a robust multi-tiered TTS pipeline:
+    1. Edge-TTS (ru-RU-DmitryNeural / ru-RU-SvetlanaNeural) with multiple retries and backoff.
+    2. OpenAI TTS (tts-1 with voice 'onyx') if OPENAI_API_KEY is available.
+    3. gTTS (Google Translate TTS, 100% free, reliable) as ultimate fallback.
+    """
     import asyncio
+    clean_story = sanitize_text_for_tts(story)
+    if not clean_story:
+        clean_story = story.strip()
+
+    print(f"[tts] Generating Russian narration ({len(clean_story.split())} words)...")
+
+    def is_valid_audio(path: Path) -> bool:
+        return path.exists() and path.stat().st_size > 1024
+
+    # Clean existing narration file if any
+    if NARRATION_FILE.exists():
+        try:
+            NARRATION_FILE.unlink()
+        except Exception:
+            pass
+
+    # ---------------- 1. EDGE-TTS (Primary) ----------------
+    voices = ["ru-RU-DmitryNeural", "ru-RU-SvetlanaNeural"]
+    for voice in voices:
+        for attempt in range(1, 4):
+            try:
+                import edge_tts
+                print(f"[tts] Trying edge-tts ({voice}, attempt {attempt}/3)...")
+
+                async def _run_edge(v=voice):
+                    communicate = edge_tts.Communicate(clean_story, v)
+                    await communicate.save(str(NARRATION_FILE))
+
+                asyncio.run(_run_edge())
+
+                if is_valid_audio(NARRATION_FILE):
+                    print(f"[tts] Narration generated with edge-tts ({voice}, {NARRATION_FILE.stat().st_size // 1024} KB)")
+                    return
+                else:
+                    print(f"[tts] edge-tts returned an empty file (attempt {attempt}/3)")
+            except Exception as e:
+                print(f"[tts] edge-tts error ({voice}, attempt {attempt}/3): {e}")
+                time.sleep(attempt * 2 + random.uniform(1, 3))
+
+    print("[tts] edge-tts unavailable on this runner/IP. Falling back to secondary TTS...")
+
+    # ---------------- 2. OPENAI TTS (High-Quality Fallback) ----------------
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if openai_key and not openai_key.startswith("your_"):
+        try:
+            print("[tts] Trying OpenAI TTS (model: tts-1, voice: onyx)...")
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_key)
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="onyx",
+                input=clean_story
+            )
+            with open(NARRATION_FILE, "wb") as f:
+                f.write(response.content)
+
+            if is_valid_audio(NARRATION_FILE):
+                print(f"[tts] Narration generated with OpenAI TTS ({NARRATION_FILE.stat().st_size // 1024} KB)")
+                return
+        except Exception as e:
+            print(f"[tts] OpenAI TTS failed: {e}")
+
+    # ---------------- 3. gTTS (Guaranteed Free Fallback) ----------------
     try:
-        import edge_tts
-    except ImportError:
-        subprocess.run(["pip", "install", "edge-tts"], check=True)
-        import edge_tts
-    
-    print("[tts] Generating Russian narration with edge-tts...")
-    
-    VOICE = "ru-RU-DmitryNeural"  # Russian male voice (or use "ru-RU-SvetlanaNeural" for female)
-    
-    async def generate():
-        communicate = edge_tts.Communicate(story, VOICE)
-        await communicate.save(str(NARRATION_FILE))
-    
-    asyncio.run(generate())
-    print(f"[tts] Narration saved to {NARRATION_FILE}")
+        print("[tts] Trying gTTS (Google Translate TTS) as guaranteed fallback...")
+        from gtts import gTTS
+        tts = gTTS(text=clean_story, lang="ru")
+        tts.save(str(NARRATION_FILE))
+
+        if is_valid_audio(NARRATION_FILE):
+            print(f"[tts] Narration generated with gTTS ({NARRATION_FILE.stat().st_size // 1024} KB)")
+            return
+    except Exception as e:
+        print(f"[tts] gTTS failed: {e}")
+
+    raise RuntimeError("All TTS engines (edge-tts, OpenAI, gTTS) failed to generate narration audio!")
 
 def generate_word_subtitles():
     """Generate one-line phrase subtitles at the bottom using Vosk."""
@@ -718,6 +804,8 @@ def main():
 
     title_desc_file = run_dir / "title_description.txt"
     title_desc_file.write_text(desc_text, encoding="utf-8")
+    # Mark topic as completed only after successful video generation
+    mark_topic_as_used(topic)
 
     print("=" * 60)
     print(f"✅ DONE. Video ready: {FINAL_VIDEO}")

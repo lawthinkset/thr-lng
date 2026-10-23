@@ -10,5 +10,4 @@ python-dotenv
 moviepy
 Pillow
 openai>=1.0.0
-
-
+gTTS>=2.5.0
