@@ -64,25 +64,10 @@ jobs:
 
     - name: 📅 Check YouTube upload schedule (Alternate days)
       id: yt_schedule
+      env:
+        INPUT_UPLOAD_YOUTUBE: ${{ github.event.inputs.upload_youtube }}
       run: |
-        INPUT_CHOICE="${{ github.event.inputs.upload_youtube }}"
-        if [ "$INPUT_CHOICE" = "true" ]; then
-          echo "should_upload=true" >> "$GITHUB_OUTPUT"
-          echo "Manual override: YouTube upload forced to TRUE."
-        elif [ "$INPUT_CHOICE" = "false" ]; then
-          echo "should_upload=false" >> "$GITHUB_OUTPUT"
-          echo "Manual override: YouTube upload forced to FALSE."
-        else
-          DAY_OF_YEAR=$(date -u +%-j)
-          echo "Current UTC Day of Year: $DAY_OF_YEAR"
-          if [ $(( 10#$DAY_OF_YEAR % 2 )) -ne 0 ]; then
-            echo "should_upload=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Today is a scheduled YouTube upload day (Day $DAY_OF_YEAR)."
-          else
-            echo "should_upload=false" >> "$GITHUB_OUTPUT"
-            echo "⏸️ Today is an alternate off-day for YouTube (Day $DAY_OF_YEAR). Skipping YouTube upload (Facebook will still upload)."
-          fi
-        fi
+        python check_schedule.py
 
     - name: Upload to YouTube
       if: steps.yt_schedule.outputs.should_upload == 'true'
@@ -113,6 +98,6 @@ jobs:
         git stash --include-untracked || true
         git pull --rebase origin main || true
         git stash pop || true
-        git add topics.txt used_topics.txt used_images.json 2>/dev/null || true
-        git diff --staged --quiet || git commit -m "🔄 Auto-update: Track used topics and images [skip ci]"
+        git add topics.txt used_topics.txt used_images.json youtube_history.json 2>/dev/null || true
+        git diff --staged --quiet || git commit -m "🔄 Auto-update: Track used topics, images, and YouTube schedule [skip ci]"
         git push || true

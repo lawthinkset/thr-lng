@@ -119,6 +119,37 @@ def upload_to_youtube(video_file, title, description, tags=None, category_id='22
     
     return response
 
+HISTORY_FILE = Path(__file__).parent / "youtube_history.json"
+
+
+def record_upload_history(video_id: str, title: str):
+    """Save upload metadata to youtube_history.json to ensure alternate-day tracking."""
+    import json
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    today_str = now_utc.strftime("%Y-%m-%d")
+
+    data = {"last_upload_date": today_str, "uploads": []}
+    if HISTORY_FILE.exists():
+        try:
+            data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    data["last_upload_date"] = today_str
+    if "uploads" not in data or not isinstance(data["uploads"], list):
+        data["uploads"] = []
+
+    data["uploads"].append({
+        "date": today_str,
+        "timestamp": now_utc.isoformat(),
+        "video_id": video_id,
+        "title": title
+    })
+
+    HISTORY_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[youtube] Saved: Updated {HISTORY_FILE.name} (last_upload_date={today_str}, video_id={video_id})")
+
 def main():
     """Upload the generated video to YouTube."""
     upload_yt = os.getenv("UPLOAD_YOUTUBE", "true").lower()
@@ -174,13 +205,15 @@ def main():
     
     # Upload
     try:
-        upload_to_youtube(
+        res = upload_to_youtube(
             video_file=video_file,
             title=title,
             description=description,
             tags=tags,
             category_id='22'
         )
+        if res and isinstance(res, dict) and res.get("id"):
+            record_upload_history(res["id"], title)
     except Exception as e:
         print(f"[youtube] ❌ Upload failed: {e}")
         raise
