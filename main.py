@@ -374,13 +374,24 @@ def generate_tts(story: str):
         except Exception:
             pass
 
-    # ---------------- 1. EDGE-TTS (Primary) ----------------
+    # ---------------- 1. EDGE-TTS (Primary with Dual Microsoft Endpoints) ----------------
+    endpoints = [
+        "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4",
+        "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1?Ocp-Apim-Subscription-Key=6A5AA1D4EAFF4E9FB37E23D68491D6F4"
+    ]
     voices = ["ru-RU-DmitryNeural", "ru-RU-SvetlanaNeural"]
     for voice in voices:
-        for attempt in range(1, 4):
+        for attempt in range(1, 5):
+            target_endpoint = endpoints[(attempt - 1) % len(endpoints)]
+            endpoint_name = "Bing" if "bing" in target_endpoint else "MSEdge"
             try:
                 import edge_tts
-                print(f"[tts] Trying edge-tts ({voice}, attempt {attempt}/3)...")
+                import edge_tts.constants
+                import edge_tts.communicate
+                edge_tts.constants.WSS_URL = target_endpoint
+                edge_tts.communicate.WSS_URL = target_endpoint
+
+                print(f"[tts] Trying edge-tts ({voice} on {endpoint_name}, attempt {attempt}/4)...")
 
                 async def _run_edge(v=voice):
                     communicate = edge_tts.Communicate(clean_story, v)
@@ -389,13 +400,13 @@ def generate_tts(story: str):
                 asyncio.run(_run_edge())
 
                 if is_valid_audio(NARRATION_FILE):
-                    print(f"[tts] Narration generated with edge-tts ({voice}, {NARRATION_FILE.stat().st_size // 1024} KB)")
+                    print(f"[tts] Narration generated with edge-tts ({voice} on {endpoint_name}, {NARRATION_FILE.stat().st_size // 1024} KB)")
                     return
                 else:
-                    print(f"[tts] edge-tts returned an empty file (attempt {attempt}/3)")
+                    print(f"[tts] edge-tts returned an empty file (attempt {attempt}/4)")
             except Exception as e:
-                print(f"[tts] edge-tts error ({voice}, attempt {attempt}/3): {e}")
-                time.sleep(attempt * 2 + random.uniform(1, 3))
+                print(f"[tts] edge-tts error ({voice} on {endpoint_name}, attempt {attempt}/4): {e}")
+                time.sleep(attempt * 1.5 + random.uniform(1, 2))
 
     print("[tts] edge-tts unavailable on this runner/IP. Falling back to secondary TTS...")
 
