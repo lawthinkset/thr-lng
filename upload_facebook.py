@@ -198,6 +198,19 @@ def upload_to_facebook(video_path, description=None, title=None, thumbnail_path=
                 if not sync_success:
                     safe_print("[Facebook] Warning: Post-upload sync did not return 200 OK, but video was created.")
 
+                # Verify fields on Facebook Graph API
+                try:
+                    verify_res = requests.get(
+                        f"https://graph.facebook.com/v21.0/{video_id}",
+                        params={"fields": "id,title,description", "access_token": access_token},
+                        timeout=15
+                    )
+                    if verify_res.status_code == 200:
+                        v_data = verify_res.json()
+                        safe_print(f"[Facebook] Confirmed Meta node fields -> Title: '{v_data.get('title')}'")
+                except Exception as ve:
+                    safe_print(f"[Facebook] Notice during Meta field verification: {ve}")
+
                 safe_print("\n" + "=" * 60)
                 safe_print("SUCCESS: FACEBOOK VIDEO PUBLISHED WITH TITLE & DESCRIPTION!")
                 safe_print(f"[Facebook] Video ID: {video_id}")
