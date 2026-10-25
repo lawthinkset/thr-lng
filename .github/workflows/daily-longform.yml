@@ -36,10 +36,10 @@ jobs:
         python-version: "3.11"
         cache: 'pip'
 
-    - name: Install FFmpeg
+    - name: Install FFmpeg & Fonts
       run: |
-        sudo apt-get update
-        sudo apt-get install -y ffmpeg fonts-dejavu-core
+        sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 || true
+        sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core || sudo apt-get install -y ffmpeg || true
 
     - name: Cache Vosk Model
       uses: actions/cache@v3
