@@ -65,6 +65,36 @@ def get_latest_video():
             "topic": meta.get("topic") or "Ancient History",
             "metadata": meta
         }
+
+    # Also search timestamped run directories in output/ (e.g. output/2026-10-25_.../final_video.mp4)
+    out_dir = Path("output")
+    if out_dir.exists():
+        candidates = [p for p in out_dir.glob("*/final_video.mp4") if p.is_file()]
+        if candidates:
+            latest = max(candidates, key=lambda p: p.stat().st_mtime)
+            meta = {"story": "", "story_ru": "", "topic": ""}
+            
+            td = latest.parent / "title_description.txt"
+            if td.exists():
+                lines = td.read_text(encoding="utf-8").split("\n")
+                if lines and lines[0].strip():
+                    meta["topic"] = lines[0].strip()
+                if len(lines) > 2:
+                    meta["story_ru"] = "\n".join(lines[2:]).strip()
+                    
+            tp = latest.parent / "topic.txt"
+            if tp.exists():
+                meta["topic"] = tp.read_text(encoding="utf-8").strip()
+                
+            st = latest.parent / "story.txt"
+            if st.exists():
+                meta["story_ru"] = st.read_text(encoding="utf-8").strip()
+                
+            return {
+                "video_path": str(latest),
+                "topic": meta.get("topic") or "Ancient History",
+                "metadata": meta
+            }
         
     video_dir = Path("output/video")
     if video_dir.exists():
@@ -162,7 +192,18 @@ def upload_to_all_platforms(video_path, caption, topic, metadata=None):
                 elif pname == "tiktok":
                     r = func(video_file=video_path, description=caption, title=topic[:100])
                 elif pname == "facebook":
-                    r = func(video_path=video_path, description=caption)
+                    thumb = Path("output/thumbnail.jpg")
+                    if not thumb.exists() and Path(video_path).parent != Path("output"):
+                        t_cand = Path(video_path).parent / "thumbnail.jpg"
+                        if t_cand.exists():
+                            thumb = t_cand
+                    thumb_path = str(thumb) if thumb.exists() else None
+                    r = func(
+                        video_path=video_path,
+                        description=caption,
+                        title=topic[:100],
+                        thumbnail_path=thumb_path
+                    )
                 elif pname == "instagram":
                     r = func(video_path=video_path, caption=caption, is_story=False)
                     
