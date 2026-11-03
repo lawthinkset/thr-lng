@@ -17,7 +17,7 @@ load_dotenv()
 
 # Pollinations AI API Configuration (PAID)
 POLLINATIONS_API_KEY = os.getenv("POLLINATIONS_API_KEY", "")
-TEXT_MODEL = "gemini-fast"  # Google Gemini 2.5 Flash Lite
+TEXT_MODEL = "openai/gpt-5.4-nano"  # Google Gemini 2.5 Flash Lite
 IMAGE_MODEL = "flux"  # Flux (high quality, photorealistic)
 
 NUM_IMAGES = 8  # 8 unique scenes (faster generation)
@@ -128,7 +128,7 @@ def generate_story_with_pollinations(topic: str) -> str:
     )
     user_prompt = f"Тема: {topic}. Расскажи подробную интересную историю с историческими фактами."
     
-    models = ["openai", "mistral", "qwen", "gemini-fast"]
+    models = ["openai", "mistral", "qwen", "openai/gpt-5.4-nano"]
     
     print(f"[story] Generating Russian story for topic: {topic}")
     
